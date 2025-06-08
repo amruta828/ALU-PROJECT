@@ -1,0 +1,380 @@
+module alu_rtl #(parameter N=8,M=4)(
+    input clk,
+    input rst,
+    input [1:0] ip_valid,
+    input mode,
+    input [M-1:0] cmd,
+    input ce,
+    input [N-1:0] opa, opb,
+    input cin,
+
+    output reg [2*N:0]res=0,
+    output reg err = 1'b0,
+    output reg oflow = 1'b0,
+    output reg cout = 1'b0,
+    output reg g = 1'b0,
+    output reg l = 1'b0,
+    output reg e = 1'b0
+);
+    reg [N-1:0]temp_opa;
+    reg [N-1:0]temp_opb;
+    reg temp_mode;
+    reg [M-1:0]temp_cmd;
+    reg [1:0]temp_ip_valid;
+    reg temp_cin;
+    reg temp_cen;
+    reg  signed [N:0]s_opa;
+    reg  signed [N:0]s_opb;
+    reg signed [2*N:0]s_res;
+    reg [2*N:0]mult_res;
+    reg [2:0]count;
+    reg mult;
+
+always@(posedge clk or posedge rst) begin
+        if(rst) begin
+            temp_opa <= 0;
+            temp_opb <= 0;
+            temp_mode <= 0;
+            temp_cmd <= 0;
+            temp_ip_valid <= 0;
+            temp_cin<=0;
+            temp_cen<=0;
+            end else begin
+            temp_opa <= opa;
+            temp_opb <= opb;
+            temp_mode <= mode;
+            temp_cmd <= cmd;
+            temp_ip_valid <= ip_valid;
+            temp_cin<=cin;
+            temp_cen<=ce;
+              end
+    end
+
+always @(posedge clk or posedge rst) begin
+
+        if (rst) begin
+            res = 0;
+            cout = 1'b0;
+            oflow = 1'b0;
+            g = 1'b0;
+            e = 1'b0;
+            l = 1'b0;
+            err = 1'b0;
+            count=0;
+            mult=0;
+        end else if (temp_cen) begin
+
+            res=0;
+            cout = 1'b0;
+            oflow = 1'b0;
+            g = 1'b0;
+            e = 1'b0;
+            l = 1'b0;
+            err = 1'b0;
+
+            if(mult)begin
+
+            count=count+1;
+            if(count==1)begin
+            res<=mult_res;
+
+            mult<=0;
+            count<=0;
+            end
+            end
+            else if (temp_mode) begin
+            case (temp_ip_valid)
+                2'b11: begin
+                    case (temp_cmd)
+                        'd0: begin
+                            res = temp_opa + temp_opb;
+                            cout = res[N];
+                        end
+                        'd1: begin
+                            res = temp_opa - temp_opb;
+                            oflow = (temp_opa < temp_opb) ? 1 : 1'b0;
+                        end
+                        'd2: begin
+                            res = temp_opa + temp_opb + temp_cin;
+
+                            cout = res[N];
+                        end
+                        'd3: begin
+                            res = temp_opa - temp_opb - temp_cin;
+                            oflow = (temp_opa < temp_opb ) ? 1 : 1'b0;
+                        end
+                        'd8: begin
+                            res = 9'b0;
+                            if (temp_opa < temp_opb) begin
+                                g = 1'b0; e = 1'b0; l = 1'b1;
+                            end else if (temp_opa > temp_opb) begin
+                                g = 1'b1; e = 1'b0; l = 1'b0;
+                            end else begin
+                                g = 1'b0; e = 1'b1; l = 1'b0;
+                            end
+                            end
+
+                        'd9:begin
+                            mult_res=(temp_opa+1)*(temp_opb+1);
+
+                            mult=1;
+                            count=0;
+                            end
+
+                        'd10:begin
+                            mult_res=(temp_opa<<1)*(temp_opb);
+                            mult=1;
+                            count=0;
+                            end
+
+                        'd11:begin
+                            s_opa=temp_opa;
+                            s_opb=temp_opb;
+                            s_res=s_opa+s_opb;
+                            res=s_res;
+                            oflow=((s_opa[N-1]==s_opb[N-1]) && s_res[N-1]!=s_opa[N-1]);
+                            if(s_opa<s_opb)begin
+                            e=0;
+                            l=1;
+                            g=0;end
+                            else if(s_opa>s_opb)begin
+                            e=0;
+                            l=0;
+                            g=1;end
+                            else begin
+                            e=1;
+                            l=0;
+                            g=0;end
+
+
+                            end
+
+                        'd12:begin
+                           s_opa=temp_opa;
+                           s_opb=temp_opb;
+                           s_res=s_opa-s_opb;
+                            res=s_res;
+                             oflow=(s_opa[N-1]== s_opb[N-1] && s_res[N-1]!=s_opa[N-1]);
+                            if(s_opa<s_opb)begin
+                            e=0;
+                            l=1;
+                            g=0;end
+                            else if(s_opa>s_opb)begin
+                            e=0;
+                            l=0;
+                            g=1;end
+                            else begin
+                            e=1;
+                            l=0;
+                            g=0;end
+
+
+
+                        end
+                        default: begin
+                            res = 9'b0;
+                            cout = 1'b0;
+                            oflow = 1'b0;
+                            g = 1'b0;
+                            e = 1'b0;
+                            l = 1'b0;
+                            err = 1'b1;
+                        end
+                    endcase
+                end
+
+                2'b01: begin
+                    case (temp_cmd)
+                        'd6: begin
+                         res = temp_opb + 1;
+                         if(res[N]==1)
+                         oflow=1;
+                         else
+                         oflow=0;
+                         end
+                        'd7: begin
+                        res = temp_opb - 1;
+
+
+                         if(res[N]==1)
+                         oflow=1;
+                         else
+                         oflow=0;
+                         end
+
+                                default: begin
+                            res = 9'b0;
+                            cout = 1'b0;
+                            oflow = 1'b0;
+                            g = 1'b0;
+                            e = 1'b0;
+                            l = 1'b0;
+                            err = 1'b1;
+                        end
+                    endcase
+                end
+
+                2'b10: begin
+                    case (temp_cmd)
+                        'd4:begin
+                         res = temp_opa + 1;
+                         if(res[N]==1)
+                         oflow=1;
+                         else
+                         oflow=0;
+                         end
+
+
+                        'd5: begin
+                        res = temp_opa - 1;
+                        if(res[N]==1)
+                         oflow=1;
+                         else
+                         oflow=0;
+                         end
+
+                        default: begin
+                            res = 9'b0;
+                            cout = 1'b0;
+                            oflow = 1'b0;
+                            g = 1'b0;
+                            e = 1'b0;
+                            l = 1'b0;
+                            err = 1'b1;
+                        end
+                    endcase
+                end
+
+                default: begin
+                    res = 9'b0;
+                    cout = 1'b0;
+                    oflow = 1'b0;
+                    g = 1'b0;
+                    e = 1'b0;
+                    l = 1'b0;
+                    err = 1'b1;
+                end
+            endcase
+        end
+
+
+            else begin
+            res = 9'b0;
+            cout = 1'b0;
+            oflow = 1'b0;
+            g = 1'b0;
+            e = 1'b0;
+            l = 1'b0;
+            err = 1'b0;
+
+                case(temp_ip_valid)
+                2'b11:begin
+                case(temp_cmd)
+                        'd0:
+                        res=temp_opa&temp_opb;
+
+                        'd1:
+                        res={{(2*N-(N)){1'b0}},~(temp_opa&temp_opb)};
+
+                        'd2:
+                        res=temp_opa|temp_opb;
+
+                        'd3:
+                        res={{(2*N-(N)){1'b0}},~(temp_opa|temp_opb)};
+
+                        'd4:
+                        res=temp_opa^temp_opb;
+
+                        'd5:
+                        res={{(2*N-(N)){1'b0}},~(temp_opa^temp_opb)};
+
+                        'd12:begin
+
+                                if (temp_opb >=( N))
+                                err = 1;
+                                else
+                                res = {{2*N-N{1'b0}}, (temp_opa << temp_opb) | (temp_opa >> (N - temp_opb))};
+
+                                end
+                        'd13: begin
+
+                                if (temp_opb >= (N))
+                                err = 1;
+                                else
+                                res = {{2*N-N{1'b0}}, (temp_opa >> temp_opb) | (temp_opa << (N - temp_opb))};
+                                end
+
+
+                        default: begin
+                            res = 9'b0;
+                            cout = 1'b0;
+                            oflow = 1'b0;
+                            g = 1'b0;
+                            e = 1'b0;
+                            l = 1'b0;
+                            err = 1'b1;
+                        end
+                    endcase
+                end
+                2'b10:begin
+                case(temp_cmd)
+                        'd6:
+                        res={{(2*N-(N)){1'b0}},(~temp_opa)};
+
+                        'd8:
+                        res={1'b0,temp_opa>>1};
+
+                        'd9:
+                        res=temp_opa<<1;
+
+                        default: begin
+                            res = 9'b0;
+                            cout = 1'b0;
+                            oflow = 1'b0;
+                            g = 1'b0;
+                            e = 1'b0;
+                            l = 1'b0;
+                            err = 1'b1;
+                        end
+                    endcase
+                end
+
+
+                2'b01:begin
+                case(temp_cmd)
+                        'd7:
+                        res={{(2*N-(N)){1'b0}},~temp_opb};
+
+                        'd10:
+                        res=temp_opb>>1;
+
+                        'd11:
+                        res=temp_opb<<1;
+
+                        default: begin
+                            res = 9'b0;
+                            cout = 1'b0;
+                            oflow = 1'b0;
+                            g = 1'b0;
+                            e = 1'b0;
+                            l = 1'b0;
+                            err = 1'b1;
+                        end
+                    endcase
+                end
+
+                default:begin
+                            res = 9'b0;
+                            cout = 1'b0;
+                            oflow = 1'b0;
+                            g = 1'b0;
+                            e = 1'b0;
+                            l = 1'b0;
+                            err = 1'b1;
+
+end
+endcase
+end
+end
+end
+endmodule
